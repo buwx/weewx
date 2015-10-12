@@ -1,0 +1,166 @@
+##############################################################################
+
+#   This section is for information about the station.
+
+[Station]
+    
+    # Description of the station location
+    location = "Scharnhausen, Germany"
+    
+    # Latitude and longitude in decimal degrees
+    latitude = 48.707
+    longitude = 9.262
+    
+    # Altitude of the station, with unit it is in. This is downloaded from
+    # from the station if the hardware supports it.
+    altitude = 320, meter    # Choose 'foot' or 'meter' for unit
+    
+    # Set to type of station hardware. There must be a corresponding stanza
+    # in this file with a 'driver' parameter indicating the driver to be used.
+    station_type = VueISS
+    
+    # The start of the rain year (1=January; 10=October, etc.). This is
+    # downloaded from the station if the hardware supports it.
+    rain_year_start = 1
+    
+    # Start of week (0=Monday, 6=Sunday)
+    week_start = 0
+    
+    # If you have a website, you may specify an URL
+    station_url = http://buwx.de
+
+##############################################################################
+
+#   This service acts as a filter, converting the unit system coming from
+#   the hardware to a unit system in the database.
+
+[StdConvert]
+    
+    # The target_unit affects only the unit system in the database. Once
+    # chosen it cannot be changed without converting the entire database.
+    # Modification of target_unit after starting weewx will result in
+    # corrupt data - the database will contain a mix of US and METRIC data.
+    #
+    # The value of target_unit does not affect the unit system for
+    # reporting - reports can display US, Metric, or any combination of units.
+    #
+    # In most cases, target_unit should be left as the default: US
+    #
+    # In particular, those migrating from a standard wview installation
+    # should use US since that is what the wview database contains.
+    
+    # DO NOT MODIFY THIS VALUE UNLESS YOU KNOW WHAT YOU ARE DOING!
+    target_unit = METRICWX    # Options are 'US', 'METRICWX', or 'METRIC'
+
+##############################################################################
+
+#   This section is for quality control checks. If units are not specified,
+#   values must be in the units defined in the StdConvert section.
+
+[StdQC]
+    
+    [[MinMax]]
+        barometer = 540, 1100, mbar
+        outTemp = -40, 65, degree_C
+        outHumidity = 0, 100
+        windSpeed = 0, 290, km_per_hour
+
+##############################################################################
+
+#   This section controls the origin of derived values.
+
+[StdWXCalculate]
+    # Derived quantities are calculated by this service. Possible values are:
+    #  hardware        - use the value provided by hardware
+    #  software        - use the value calculated by weewx
+    #  prefer_hardware - use value provide by hardware if available,
+    #                      otherwise use value calculated by weewx
+    
+    pressure = prefer_hardware
+    barometer = prefer_hardware
+    altimeter = prefer_hardware
+    windchill = prefer_hardware
+    heatindex = prefer_hardware
+    dewpoint = prefer_hardware
+    inDewpoint = prefer_hardware
+    rainRate = prefer_hardware
+
+##############################################################################
+
+#   For hardware that supports it, this section controls how often the
+#   onboard clock gets updated.
+
+[StdTimeSynch]
+    
+    # How often to check the weather station clock for drift (in seconds)
+    clock_check = 14400
+    
+    # How much it can drift before we will correct it (in seconds)
+    max_drift = 5
+
+##############################################################################
+
+#   This section is for configuring the archive service.
+
+[StdArchive]
+    
+    # If the station hardware supports data logging then the archive interval
+    # will be downloaded from the station. Otherwise, specify it (in seconds).
+    archive_interval = 60
+    
+    # How long to wait (in seconds) before processing new archive data. Must
+    # be greater than zero.
+    archive_delay = 15
+    
+    # If possible, new archive records are downloaded from the station
+    # hardware. If the hardware does not support this, then new archive
+    # records will be generated in software.
+    # Set the following to "software" to force software record generation.
+    record_generation = software
+    
+    # Whether to include LOOP data in hi/low statistics
+    loop_hilo = True
+    
+    # The data binding used to save archive records
+    data_binding = wx_binding
+
+##############################################################################
+
+#   This section binds a data store to a database.
+
+[DataBindings]
+    
+    [[wx_binding]]
+        # The database must match one of the sections in [Databases].
+        # This is likely to be the only option you would want to change.
+        database = archive_mysql
+        # The name of the table within the database
+        table_name = archive
+        # The manager handles aggregation of data for historical summaries
+        manager = weewx.wxmanager.WXDaySummaryManager
+        # The schema defines the structure of the database.
+        # It is *only* used when the database is created.
+        schema = schemas.wview.schema
+
+##############################################################################
+
+#   This section defines various databases.
+
+[Databases]
+    
+    # A SQLite database is simply a single file
+    [[archive_sqlite]]
+        database_type = SQLite
+        database_name = weewx.sdb
+    
+    # MySQL
+    [[archive_mysql]]
+        database_type = MySQL
+        database_name = weewx
+
+##############################################################################
+
+[VueISS]
+    
+    # The driver to use:
+    driver = user.drivers.vueiss
