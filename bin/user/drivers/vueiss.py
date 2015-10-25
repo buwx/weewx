@@ -369,7 +369,7 @@ class StationParser(object):
         return 'I'
 
 DRIVER_NAME = 'VueISS'
-DRIVER_VERSION = "1.0"
+DRIVER_VERSION = "1.1"
 
 def loader(config_dict, engine):
 
@@ -398,7 +398,7 @@ class VueISS(weewx.drivers.AbstractDevice):
 
                 DELTA = 300
                 if self.last_id - DELTA >= 0:
-                    cursor.execute("SELECT id,UNIX_TIMESTAMP(ts),data FROM logger WHERE id>=%d AND id<=%d ORDER BY id ASC LIMIT 5000" % (self.last_id - DELTA, self.last_id))
+                    cursor.execute("SELECT id,dateTime,data FROM logger WHERE id>=%d AND id<=%d ORDER BY id ASC LIMIT 5000" % (self.last_id - DELTA, self.last_id))
                     for (_, data_time, strdata) in cursor:
                         data = strdata.split()
                         self.parser.parse(data, data_time)
@@ -409,7 +409,7 @@ class VueISS(weewx.drivers.AbstractDevice):
             old_id = self.last_id
             with weewx.manager.open_manager_with_config(self.config_dict, 'wx_binding') as dbmanager:
                 with weedb.Transaction(dbmanager.connection) as cursor:
-                    cursor.execute("SELECT id,UNIX_TIMESTAMP(ts),data FROM logger WHERE id>%d ORDER BY id ASC LIMIT 5000" % (self.last_id))
+                    cursor.execute("SELECT id,dateTime,data FROM logger WHERE id>%d ORDER BY id ASC LIMIT 5000" % (self.last_id))
                     for (self.last_id, self.the_time, strdata) in cursor:
                         data = strdata.split()
                         values = self.parser.parse(data, self.the_time)
