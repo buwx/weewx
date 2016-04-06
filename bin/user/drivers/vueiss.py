@@ -255,7 +255,10 @@ class BarometerData(object):
         self.barometerCount = 0
 
     def add(self, data):
-        self.barometer += pow(pow(float(data[4])/100.0, 0.1902614) + 8.417168e-05 * self.height, 5.255927)
+        if data[0] == 'A':
+            self.barometer += float(data[4])/100.0
+        else:
+            self.barometer += pow(pow(float(data[4])/100.0, 0.1902614) + 8.417168e-05 * self.height, 5.255927)
         self.barometerCount += 1
 
     def get(self):
@@ -293,10 +296,10 @@ class StationParser(object):
         self.packet_time = None
 
     def parse(self, data, data_time):
-        if not data or (data[0] != 'B' and data[0] != 'I'):
+        if not data or (data[0] != 'A' and data[0] != 'B' and data[0] != 'I'):
             return None
 
-        if data[0] == 'B':
+        if data[0] == 'A' or data[0] == 'B':
             self.barometer_data.add(data)
 
             packet_time = data_time - data_time % 60
@@ -369,7 +372,7 @@ class StationParser(object):
         return 'I'
 
 DRIVER_NAME = 'VueISS'
-DRIVER_VERSION = "1.1"
+DRIVER_VERSION = "2.0"
 
 def loader(config_dict, engine):
 
