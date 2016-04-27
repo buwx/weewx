@@ -1,19 +1,12 @@
-CREATE TABLE logger (
-  id          INT NOT NULL AUTO_INCREMENT,
-  ts          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  sensor      CHAR(1) NOT NULL,
+CREATE TABLE sensor (
+  dateTime    BIGINT NOT NULL,
   data        VARCHAR(80),
   description VARCHAR(80),
-  PRIMARY KEY (id),
-  INDEX (ts),
-  INDEX (sensor)
+  INDEX (dateTime)
 );
 
-CREATE TABLE persistent (
-  id         INT NOT NULL AUTO_INCREMENT,
-  last_id    INT,
-  last_time  INT,
-  PRIMARY KEY (id)
+CREATE TABLE last_sensor (
+  dateTime BIGINT NOT NULL
 );
 
-INSERT INTO persistent(last_id,last_time) VALUES(0,0);
+INSERT INTO last_sensor VALUES(0);

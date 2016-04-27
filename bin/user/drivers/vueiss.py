@@ -12,6 +12,7 @@
 
 from __future__ import with_statement
 import time
+import syslog
 import MySQLdb
 
 from math import sin, cos, pi, acos, pow
@@ -23,6 +24,9 @@ import weedb
 import weeutil.weeutil
 import weewx.drivers
 import weewx.manager
+
+def logmsg(msg):
+    syslog.syslog(syslog.LOG_INFO, 'vueiss: %s' % msg)
 
 POLYNOMIAL = 0x1021
 PRESET = 0
@@ -301,10 +305,9 @@ class StationParser(object):
 
         if data[0] == 'A' or data[0] == 'B':
             self.barometer_data.add(data)
-
-            packet_time = data_time - data_time % 60
-            if self.packet_time != packet_time:
-                self.packet_time = packet_time
+            new_packet_time = data_time - data_time % 60
+            if self.packet_time != new_packet_time:
+                self.packet_time = new_packet_time
 
                 packet = {}
                 packet['dateTime'] = self.packet_time
@@ -328,6 +331,7 @@ class StationParser(object):
                 self.humidy_data.reset()
 
                 return packet
+            return None
 
         if crc(data) == 0:
             self.wind_data.add(data)
@@ -372,7 +376,7 @@ class StationParser(object):
         return 'I'
 
 DRIVER_NAME = 'VueISS'
-DRIVER_VERSION = "2.0"
+DRIVER_VERSION = "2.1"
 
 def loader(config_dict, engine):
 
@@ -391,39 +395,41 @@ class VueISS(weewx.drivers.AbstractDevice):
         self.config_dict = config_dict
 
         self.the_time = 0
-        self.last_id = None
 
         with weewx.manager.open_manager_with_config(self.config_dict, 'wx_binding') as dbmanager:
             with weedb.Transaction(dbmanager.connection) as cursor:
-                cursor.execute("SELECT last_id,last_time FROM persistent") 
+                cursor.execute("SELECT dateTime FROM last_sensor") 
                 for row in cursor:
-                    (self.last_id, self.the_time) = row
+                   self.the_time = int(row[0])
 
-                DELTA = 300
-                if self.last_id - DELTA >= 0:
-                    cursor.execute("SELECT id,dateTime,data FROM logger WHERE id>=%d AND id<=%d ORDER BY id ASC LIMIT 5000" % (self.last_id - DELTA, self.last_id))
-                    for (_, data_time, strdata) in cursor:
+                DELTA = 600000
+                if self.the_time - DELTA >= 0:
+                    cursor.execute("SELECT dateTime,data FROM sensor WHERE dateTime>=%d AND dateTime<=%d ORDER BY dateTime ASC LIMIT 500" % (self.the_time - DELTA, self.the_time))
+                    for (data_time, strdata) in cursor:
                         data = strdata.split()
-                        self.parser.parse(data, data_time)
+                        self.parser.parse(data, data_time/1000)
+
+                logmsg("Starting with %d" % (self.the_time/1000))
 
     def genLoopPackets(self):
 
         while True:
-            old_id = self.last_id
+            old_time = self.the_time
             with weewx.manager.open_manager_with_config(self.config_dict, 'wx_binding') as dbmanager:
                 with weedb.Transaction(dbmanager.connection) as cursor:
-                    cursor.execute("SELECT id,dateTime,data FROM logger WHERE id>%d ORDER BY id ASC LIMIT 5000" % (self.last_id))
-                    for (self.last_id, self.the_time, strdata) in cursor:
+                    cursor.execute("SELECT dateTime,data FROM sensor WHERE dateTime>%d ORDER BY dateTime ASC LIMIT 5000" % (self.the_time))
+                    for (self.the_time, strdata) in cursor:
                         data = strdata.split()
-                        values = self.parser.parse(data, self.the_time)
+                        values = self.parser.parse(data, self.the_time/1000)
                         if values:
                             packet = {'usUnits' : weewx.METRICWX }
-
                             packet.update(values)
                             yield packet
 
-                    if old_id != self.last_id:
-                        cursor.execute("UPDATE persistent SET last_id=%d, last_time=%d" % (self.last_id, self.the_time))
+                    if old_time != self.the_time:
+                        old_time = self.the_time
+                        cursor.execute("UPDATE last_sensor SET dateTime=%d" % (old_time))
+                        dbmanager.connection.commit()
 
             time.sleep(15.0)
 
@@ -432,7 +438,7 @@ class VueISS(weewx.drivers.AbstractDevice):
         return "Davis Vue ISS"
 
     def getTime(self):
-        return self.the_time
+        return self.the_time/1000
 
 def confeditor_loader():
     return VueISSConfEditor()
