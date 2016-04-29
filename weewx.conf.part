@@ -106,7 +106,7 @@
     
     # If the station hardware supports data logging then the archive interval
     # will be downloaded from the station. Otherwise, specify it (in seconds).
-    archive_interval = 60
+    #archive_interval = 60
     
     # How long to wait (in seconds) before processing new archive data. Must
     # be greater than zero.
@@ -116,7 +116,7 @@
     # hardware. If the hardware does not support this, then new archive
     # records will be generated in software.
     # Set the following to "software" to force software record generation.
-    record_generation = software
+    record_generation = hardware
     
     # Whether to include LOOP data in hi/low statistics
     loop_hilo = True

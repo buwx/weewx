@@ -14,6 +14,7 @@ from __future__ import with_statement
 import time
 import syslog
 import MySQLdb
+import Queue
 
 from math import sin, cos, pi, acos, pow
 from numpy import array
@@ -395,6 +396,9 @@ class VueISS(weewx.drivers.AbstractDevice):
         self.config_dict = config_dict
 
         self.the_time = 0
+        self.old_time = 0
+
+        self.packets = Queue.Queue()
 
         with weewx.manager.open_manager_with_config(self.config_dict, 'wx_binding') as dbmanager:
             with weedb.Transaction(dbmanager.connection) as cursor:
@@ -414,7 +418,6 @@ class VueISS(weewx.drivers.AbstractDevice):
     def genLoopPackets(self):
 
         while True:
-            old_time = self.the_time
             with weewx.manager.open_manager_with_config(self.config_dict, 'wx_binding') as dbmanager:
                 with weedb.Transaction(dbmanager.connection) as cursor:
                     cursor.execute("SELECT dateTime,data FROM sensor WHERE dateTime>%d ORDER BY dateTime ASC LIMIT 5000" % (self.the_time))
@@ -424,18 +427,32 @@ class VueISS(weewx.drivers.AbstractDevice):
                         if values:
                             packet = {'usUnits' : weewx.METRICWX }
                             packet.update(values)
+                            self.packets.put(packet)
+                            logmsg("Yield packet (%d)" % (self.the_time/1000))
                             yield packet
 
-                    if old_time != self.the_time:
-                        old_time = self.the_time
-                        cursor.execute("UPDATE last_sensor SET dateTime=%d" % (old_time))
-                        dbmanager.connection.commit()
+                    if self.old_time != self.the_time:
+                        self.old_time = self.the_time
+                        logmsg("Remember last timestamp %d" % (self.old_time))
+                        cursor.execute("UPDATE last_sensor SET dateTime=%d" % (self.old_time))
 
             time.sleep(15.0)
+
+    def genArchiveRecords(self, lastgood_ts):
+        while not self.packets.empty():
+            packet = self.packets.get()
+            if packet['dateTime'] >= lastgood_ts:
+                packet['interval'] = 1
+                yield packet
 
     @property
     def hardware_name(self):
         return "Davis Vue ISS"
+
+    # The driver archive interval is 60 seconds.
+    @property
+    def archive_interval(self):
+        return 60
 
     def getTime(self):
         return self.the_time/1000
