@@ -441,7 +441,7 @@ class VueISS(weewx.drivers.AbstractDevice):
     def genArchiveRecords(self, lastgood_ts):
         while not self.packets.empty():
             packet = self.packets.get()
-            if packet['dateTime'] >= lastgood_ts:
+            if packet['dateTime'] > lastgood_ts:
                 packet['interval'] = 1
                 yield packet
 
