@@ -8,7 +8,7 @@
 ##ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 ##FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 ##details.
-"""Driver for own weather system Vantage Vue @ Meteostick database"""
+"""Driver for Vantage Vue @ DIY datalogger"""
 
 from __future__ import with_statement
 import time
@@ -377,7 +377,7 @@ class StationParser(object):
         return 'I'
 
 DRIVER_NAME = 'VueISS'
-DRIVER_VERSION = "2.1"
+DRIVER_VERSION = "2.2"
 
 def loader(config_dict, engine):
 
