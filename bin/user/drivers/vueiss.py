@@ -16,7 +16,7 @@ import syslog
 import MySQLdb
 import Queue
 
-from math import sin, cos, pi, acos, pow
+from math import sin, cos, pi, acos, pow, exp, log
 from numpy import array
 from numpy.linalg import norm
 
@@ -64,6 +64,49 @@ def crc(data):
         pass
     return crc
 
+# Calculates the saturation vapour pressure (see dwd)
+def calc_svp(temperature):
+    if not temperature:
+        return None
+    
+    C1   = 6.10780
+    C2_P = 17.08085
+    C2_N = 17.84362
+    C3_P = 234.175
+    C3_N = 245.425
+
+    C2 = C2_P if temperature >= 0 else C2_N
+    C3 = C3_P if temperature >= 0 else C3_N
+
+    return C1 * exp(C2 * temperature / (C3 + temperature))
+
+# Calculates the dewpoint (see dwd)
+def calc_dewpoint(temperature, humidity):
+    if not temperature or not humidity:
+        return None
+
+    C1   = 6.10780
+    C2_P = 17.08085
+    C2_N = 17.84362
+    C3_P = 234.175
+    C3_N = 245.425
+
+    C2 = C2_P if temperature >= 0 else C2_N
+    C3 = C3_P if temperature >= 0 else C3_N
+
+    svp = calc_svp(temperature)
+
+    tmp = log(0.01 * humidity * svp / C1)
+    dt = C3 * tmp / (C2 - tmp)
+
+    if temperature >= 0 and dt < 0.0:
+        dt = C3_N * tmp / (C2_N - tmp)
+
+    if dt > temperature:
+        dt = temperature
+
+    return round(dt, 1)
+
 # wind data 1-min-average
 class WindData(object):
 
@@ -93,7 +136,7 @@ class WindData(object):
 
         direction = None
         length = norm(self.windVektor)
-        speed = round(self.windSpeed/self.windCount, 2)
+        speed = self.windSpeed / self.windCount
         if speed > 0 and length > 0.01:
             rad = acos(self.windVektor[0] / length)
             if self.windVektor[1] < 0:
@@ -102,8 +145,6 @@ class WindData(object):
             direction = 90.0 - 180.0 * rad / pi
             if direction < 0:
                 direction += 360.0
-
-            direction = round(direction, 0)
 
         return [speed, direction]
 
@@ -168,7 +209,7 @@ class TemperatureData(object):
         self.tempCount += 1
 
     def get(self):
-        return round(self.temp / self.tempCount, 1) if self.tempCount > 0 else None
+        return self.temp / self.tempCount if self.tempCount > 0 else None
 
 # temperatur data floating N-min-average
 class TemperatureDataN(object):
@@ -208,7 +249,7 @@ class HumityData(object):
         self.humidityCount += 1
 
     def get(self):
-        return round(self.humidity / self.humidityCount, 0) if self.humidityCount > 0 else None
+        return self.humidity / self.humidityCount if self.humidityCount > 0 else None
 
 # humity data floating N-min-average
 class HumityDataN(object):
@@ -241,7 +282,9 @@ class WindGustData(object):
         self.windGustCount = 0
 
     def add(self, data):
-        self.windGust = round(int(data[5], 16) * 0.44704, 2)
+        _windGust = int(data[5], 16) * 0.44704
+        if _windGust > self.windGust:
+            self.windGust = _windGust
         self.windGustCount += 1
 
     def get(self):
@@ -267,7 +310,7 @@ class BarometerData(object):
         self.barometerCount += 1
 
     def get(self):
-        return round(self.barometer / self.barometerCount, 1) if self.barometerCount > 0 else None
+        return self.barometer / self.barometerCount if self.barometerCount > 0 else None
 
 # barometer floating N-min-average
 class BarometerDataN(object):
@@ -292,7 +335,7 @@ class StationParser(object):
 
     def __init__(self):
         # initialize data objects
-        self.barometer_data = BarometerDataN(310.17, 10)
+        self.barometer_data = BarometerDataN(310.8, 10)
         self.wind_data = WindDataN(10)
         self.rain_data = RainData()
         self.temp_data = TemperatureDataN(5)
@@ -312,16 +355,28 @@ class StationParser(object):
 
                 packet = {}
                 packet['dateTime'] = self.packet_time
-                packet['barometer'] = self.barometer_data.get()
+
+                _barometer = self.barometer_data.get()
+                packet['barometer'] = round(_barometer, 1) if _barometer else None
 
                 wind_info = self.wind_data.get()
-                packet['windSpeed'] = wind_info[0] if wind_info else None
-                packet['windDir'] = wind_info[1] if wind_info else None
+                _windSpeed = wind_info[0] if wind_info else None
+                packet['windSpeed'] = round(_windSpeed, 2) if _windSpeed else None
+                _windSpeed = wind_info[1] if wind_info else None
+                packet['windDir'] = round(_windSpeed, 0) if _windSpeed else None
+
+                _windGust = self.gust_data.get()
+                packet['windGust'] = round(_windGust, 2) if _windGust else None
 
                 packet['rain'] = self.rain_data.get()
-                packet['outTemp'] = self.temp_data.get()
-                packet['windGust'] = self.gust_data.get()
-                packet['outHumidity'] = self.humidy_data.get()
+
+                _outTemp = self.temp_data.get()
+                packet['outTemp'] = round(_outTemp, 1) if _outTemp else None
+
+                _outHumidity = self.humidy_data.get()
+                packet['outHumidity'] = round(_outHumidity, 0) if _outHumidity else None
+
+                packet['dewpoint'] = calc_dewpoint(_outTemp, _outHumidity)
 
                 # reset data
                 self.barometer_data.reset()
@@ -377,7 +432,7 @@ class StationParser(object):
         return 'I'
 
 DRIVER_NAME = 'VueISS'
-DRIVER_VERSION = "2.2"
+DRIVER_VERSION = "2.3"
 
 def loader(config_dict, engine):
 
