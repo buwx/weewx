@@ -5,12 +5,11 @@ Upload data to wetter.com
 [StdRESTful]
     [[Wetter]]
         enable = true | false
-        id     = USERNAME
-        pwd    = PASSWORD
+        username = STATION ID
+        password = STATION PASSWORD
 """
 
 import Queue
-import re
 import sys
 import syslog
 import time
@@ -20,6 +19,8 @@ import urllib2
 import weewx.restx
 import weewx.units
 from weeutil.weeutil import to_bool
+
+API_VERSION = "5.0.2 - 2015/06/01"
 
 if weewx.__version__ < "3":
     raise weewx.UnsupportedFeature("weewx 3 is required, found %s" %
@@ -39,16 +40,12 @@ def logerr(msg):
 
 class Wetter(weewx.restx.StdRESTful):
     def __init__(self, engine, config_dict):
-        """This service recognizes standard restful options plus the following:
-
-        username: username
-        password: password
-        """
         super(Wetter, self).__init__(engine, config_dict)
-
         site_dict = weewx.restx.check_enable(config_dict, 'Wetter', 'username', 'password')
         if site_dict is None:
             return
+
+        loginf("WeatherReport API %s" % API_VERSION)
 
         site_dict['manager_dict'] = weewx.manager.get_manager_dict_from_config(config_dict,
                                                                                'wx_binding')
@@ -57,7 +54,7 @@ class Wetter(weewx.restx.StdRESTful):
         self.archive_thread = WetterThread(self.archive_queue, **site_dict)
         self.archive_thread.start()
         self.bind(weewx.NEW_ARCHIVE_RECORD, self.new_archive_record)
-        loginf("Data will be uploaded for user id %s" % site_dict['username'])
+        loginf("Data will be uploaded for station id %s" % site_dict['username'])
 
     def new_archive_record(self, event):
         self.archive_queue.put(event.record)
@@ -65,22 +62,22 @@ class Wetter(weewx.restx.StdRESTful):
 class WetterThread(weewx.restx.RESTThread):
 
     _SERVER_URL = 'http://interface.wetterarchiv.de/weather'
-    _DATA_MAP = {'hu':  ('outHumidity', '%.0f', 1.0), # percent
-                 'te':  ('outTemp',     '%.1f', 1.0), # C
-                 'dp':  ('dewpoint',    '%.1f', 1.0), # C
-                 'pr':  ('barometer',   '%.1f', 1.0), # hPa
-                 'wd':  ('windDir',     '%.0f', 1.0), # degrees
-                 'ws':  ('windSpeed',   '%.1f', 1.0), # m/s
-                 'wg':  ('windGust',    '%.1f', 1.0), # m/s
-                 'pa':  ('hourRain',    '%.2f', 1.0), # mm
-                 'rr':  ('rainRate',    '%.2f', 1.0), # mm/hr
-                 'uv':  ('UV',          '%.0f', 1.0), # uv index
-                 'sr':  ('radiation',   '%.2f', 1.0), # W/m^2
-                 'hui': ('inHumidity',  '%.0f', 1.0), # percent
-                 'tei': ('inTemp',      '%.1f', 1.0), # C
-                 'huo': ('extraHumid1', '%.0f', 1.0), # percent
-                 'teo': ('extraTemp1',  '%.1f', 1.0), # C
-                 'tes': ('soilTemp1',   '%.1f', 1.0)  # C
+    _DATA_MAP = {'hu':  ('outHumidity', '%.0f'), # percent
+                 'te':  ('outTemp',     '%.1f'), # C
+                 'dp':  ('dewpoint',    '%.1f'), # C
+                 'pr':  ('barometer',   '%.1f'), # hPa
+                 'wd':  ('windDir',     '%.0f'), # degrees
+                 'ws':  ('windSpeed',   '%.1f'), # m/s
+                 'wg':  ('windGust',    '%.1f'), # m/s
+                 'pa':  ('hourRain',    '%.2f'), # mm
+                 'rr':  ('rainRate',    '%.2f'), # mm/hr
+                 'uv':  ('UV',          '%.0f'), # uv index
+                 'sr':  ('radiation',   '%.2f'), # W/m^2
+                 'hui': ('inHumidity',  '%.0f'), # percent
+                 'tei': ('inTemp',      '%.1f'), # C
+                 'huo': ('extraHumid1', '%.0f'), # percent
+                 'teo': ('extraTemp1',  '%.1f'), # C
+                 'tes': ('soilTemp1',   '%.1f')  # C
                  }
 
     def __init__(self, queue, username, password, manager_dict,
@@ -104,23 +101,24 @@ class WetterThread(weewx.restx.RESTThread):
         self.server_url = server_url
         self.skip_upload = to_bool(skip_upload)
 
-    def process_record(self, record, dbm):
-        r = self.get_record(record, dbm)
+    def process_record(self, record, dbmanager):
+        r = self.get_record(record, dbmanager)
         data = self.get_data(r)
         url = urllib.urlencode(data)
-        if weewx.debug >= 2:
-            logdbg('url: %s' % re.sub(r"pwd=[^\&]*", "pwd=XXX", url))
         if self.skip_upload:
             loginf("skipping upload")
             return
         req = urllib2.Request(self.server_url, url)
         req.add_header("User-Agent", "weewx/%s" % weewx.__version__)
         self.post_with_retries(req)
-        loginf(url)
 
     def check_response(self, response):
-        txt = response.read()
-        if txt.find('"status":"error"') != -1:
+        txt = response.read().lower()
+        if txt.find('"errorcode":"100"') != -1 or \
+           txt.find('"errorcode":"101"') != -1 or \
+           txt.find('"errorcode":"102"') != -1:
+            raise weewx.restx.BadLogin(txt)
+        elif txt.find('"status":"error"') != -1:
             raise weewx.restx.FailedPost("Server returned '%s'" % txt)
 
     def get_data(self, in_record):
@@ -137,7 +135,6 @@ class WetterThread(weewx.restx.RESTThread):
         for key in self._DATA_MAP:
             rkey = self._DATA_MAP[key][0]
             if record.has_key(rkey) and record[rkey] is not None:
-                v = record[rkey] * self._DATA_MAP[key][2]
-                values[key] = self._DATA_MAP[key][1] % v
+                values[key] = self._DATA_MAP[key][1] % record[rkey]
 
         return values
